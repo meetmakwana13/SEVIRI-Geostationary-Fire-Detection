@@ -16,10 +16,10 @@ Developed by [**iForest Global**](https://iforest.global) for monitoring crop re
 - [Requirements](#-requirements)
 - [Installation](#-installation)
 - [Configuration](#%EF%B8%8F-configuration)
-- [Running the Analysis](#-running-the-analysis)
+- [Running the Analysis](#️-running-the-analysis)
 - [Outputs](#-outputs)
 - [Interpreting the Results](#-interpreting-the-results)
-- [Limitations](#-limitations)
+- [Limitations](#️-limitations)
 - [Contributing](#-contributing)
 - [License](#-license)
 
