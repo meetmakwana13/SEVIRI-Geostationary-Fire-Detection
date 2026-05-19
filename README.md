@@ -25,7 +25,7 @@ Developed by [**iForest Global**](https://iforest.global) for monitoring crop re
 
 ---
 
-## 🛰️ The Problem — Why Standard Satellites Miss Fires
+## 🚨 The Problem — Why Standard Satellites Miss Fires
 
 The two most widely used fire detection satellite systems — **MODIS** (on Terra and Aqua) and **VIIRS** (on Suomi-NPP / NOAA-20) — are mounted on **polar-orbiting, sun-synchronous satellites**. This means they pass over any given location on Earth at the same local time every day.
 
