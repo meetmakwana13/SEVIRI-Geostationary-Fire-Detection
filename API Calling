@@ -1,0 +1,122 @@
+import os
+import shutil
+import zipfile
+import geopandas as gpd
+from datetime import datetime
+import concurrent.futures
+import eumdac
+
+# ==========================================
+# 1. CONFIGURATION & SPATIAL EXTENT
+# ==========================================
+CONSUMER_KEY = 
+CONSUMER_SECRET =
+COLLECTION_ID = "EO:EUM:DAT:MSG:HRSEVIRI-IODC"
+OUTPUT_BASE_DIR = r"C:\Desktop\sevari\August 2026"
+START_YEAR = 2026
+END_YEAR = 2026
+
+# EUMETSAT Data Store allows a maximum of 10 parallel connections
+MAX_WORKERS = 10 
+
+# Shapefile setup
+SHAPEFILE_PATH = r'C:\Desktop\Shapefile\District Boundary\District_NWIC.shp'
+STATE_COL = 'State'
+STATE_MAPPING = {'PB': 'Punjab', 'HR': 'Haryana', 'UP': 'Uttar Pradesh', 'MP': 'Madhya Pradesh'}
+
+print("Extracting bounding box from shapefile for AOI...")
+gdf = gpd.read_file(SHAPEFILE_PATH)
+target_states = list(STATE_MAPPING.values())
+filtered_gdf = gdf[gdf[STATE_COL].isin(target_states)]
+
+# Extract coordinates: (min_lon, min_lat, max_lon, max_lat)
+minx, miny, maxx, maxy = filtered_gdf.total_bounds
+bbox_wsen = (minx, miny, maxx, maxy) 
+print(f"AOI Bounding Box calculated: {bbox_wsen}")
+
+# ==========================================
+# 2. AUTHENTICATION & DATASTORE SETUP
+# ==========================================
+print("Authenticating with EUMETSAT...")
+token = eumdac.AccessToken((CONSUMER_KEY, CONSUMER_SECRET))
+datastore = eumdac.DataStore(token)
+selected_collection = datastore.get_collection(COLLECTION_ID)
+print(f"Connected to collection: {selected_collection.title}")
+
+# ==========================================
+# 3. DOWNLOAD & EXTRACTION WORKER FUNCTION
+# ==========================================
+def process_product(product, year_dir):
+    """Worker function to handle individual product download and extraction."""
+    product_id = str(product)
+    zip_path = os.path.join(year_dir, f"{product_id}.zip")
+    
+    # Check if extracted .nat file (or similar) already exists
+    already_extracted = any(f.startswith(product_id) and not f.endswith('.zip') for f in os.listdir(year_dir))
+    
+    if already_extracted:
+        return f"Skipped existing: {product_id}"
+        
+    try:
+        # Download ZIP
+        with product.open() as f_src, open(zip_path, 'wb') as f_dst:
+            shutil.copyfileobj(f_src, f_dst)
+        
+        # Extract ZIP
+        with zipfile.ZipFile(zip_path, 'r') as zip_ref:
+            zip_ref.extractall(year_dir)
+            
+        # Cleanup ZIP
+        os.remove(zip_path)
+        return f"Successfully processed: {product_id}"
+        
+    except zipfile.BadZipFile:
+        if os.path.exists(zip_path):
+            os.remove(zip_path)
+        return f"❌ Error: Bad zip file for {product_id}. Removed partial file."
+    except Exception as e:
+        if os.path.exists(zip_path):
+            os.remove(zip_path)
+        return f"❌ Error processing {product_id}: {e}"
+
+# ==========================================
+# 4. PARALLEL EXECUTION LOOP
+# ==========================================
+for year in range(START_YEAR, END_YEAR + 1):
+    dt_start = datetime(year, 8, 9, 0, 0, 0)
+    dt_end = datetime(year, 8, 15, 23, 59, 59) #its in (yyyy,m,d,h,m,s) formate
+    
+    year_dir = os.path.join(OUTPUT_BASE_DIR, str(year))
+    os.makedirs(year_dir, exist_ok=True)
+    
+    print(f"\n--- Searching for {year} data inside AOI ---")
+    
+    # Filter search with bounding box
+    products = selected_collection.search(
+        dtstart=dt_start,
+        dtend=dt_end,
+        bbox=bbox_wsen
+    )
+    
+    # EUMDAC returns an iterator; convert to list to know the exact count
+    product_list = list(products)
+    total_found = len(product_list)
+    print(f"Found {total_found} products intersecting the AOI for {year}.")
+    print(f"Starting parallel download with {MAX_WORKERS} workers...")
+    
+    # Launch multi-threaded processing
+    with concurrent.futures.ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
+        # Submit all tasks to the executor
+        future_to_product = {
+            executor.submit(process_product, prod, year_dir): prod 
+            for prod in product_list
+        }
+        
+        # Process results as they complete concurrently
+        completed = 0
+        for future in concurrent.futures.as_completed(future_to_product):
+            completed += 1
+            result_msg = future.result()
+            print(f"[{completed}/{total_found}] {result_msg}")
+
+print("\n🎉 Concurrent download and extraction process completed!")
