@@ -6,15 +6,20 @@ import geopandas as gpd
 from shapely.geometry import Point
 import matplotlib.pyplot as plt
 import numpy as np
-from datetime import datetime, timedelta, time
+from datetime import datetime, timedelta, time, date
 from matplotlib.ticker import FuncFormatter, PercentFormatter
 
 # --- CONFIGURATION ---
-DATA_DIR = r'C:\Users\iForest.Global\OneDrive - INTERNATIONAL FORUM FOR ENVIRONMENT SCIENCE & TECHNOLOGY (iFOREST)\Desktop\sevari\15022026_03052026'
-DATA_DIR_OUTPUT = r'C:\Users\iForest.Global\OneDrive - INTERNATIONAL FORUM FOR ENVIRONMENT SCIENCE & TECHNOLOGY (iFOREST)\Desktop\sevari\15022026_03052026\output_2'
+DATA_DIR = r'C:\Users\iForest.Global\OneDrive - INTERNATIONAL FORUM FOR ENVIRONMENT SCIENCE & TECHNOLOGY (iFOREST)\Desktop\sevari\15Feb_16May_2019-2026\2026'
+DATA_DIR_OUTPUT = r'C:\Users\iForest.Global\OneDrive - INTERNATIONAL FORUM FOR ENVIRONMENT SCIENCE & TECHNOLOGY (iFOREST)\Desktop\sevari\15Feb_16May_2019-2026\2026\output_2'
 FILE_PATTERN = '*.NAT'
 
-# District Shapefile (Ensure this contains both 'District' and 'State' columns)      
+# --- DATE FILTER CONFIGURATION ---
+# Define the date range for your analysis (Format: YYYY, MM, DD)
+START_DATE = date(2026, 3, 1)                                                                                                           
+END_DATE = date(2026, 6, 30)
+
+# District Shapefile (Ensure this contains both 'District' and 'State' columns)       
 SHAPEFILE_PATH = r'C:\Users\iForest.Global\OneDrive - INTERNATIONAL FORUM FOR ENVIRONMENT SCIENCE & TECHNOLOGY (iFOREST)\Desktop\Shapefile\District Boundary\District_NWIC.shp'
 DIST_COL = 'District'
 STATE_COL = 'State'
@@ -27,6 +32,8 @@ STATE_MAPPING = {'PB': 'Punjab', 'HR': 'Haryana', 'UP': 'Uttar Pradesh', 'MP': '
 STATE_COLORS = {'PB': 'blue', 'HR': 'red', 'UP': 'green', 'MP': 'purple'}
 BAR_COLOR = '#de525f' 
 
+USE_REPORTED_WINDOWS = False
+
 # Define "Reported" Time Windows (IST)
 REPORTED_WINDOWS = [
     (time(0, 30), time(2, 30)),
@@ -34,7 +41,11 @@ REPORTED_WINDOWS = [
 ]
 
 def is_time_reported(check_time):
-    """Checks if a time object falls within the defined satellite overpass windows."""
+    # If the toggle is off, treat every timestamp as "reported"
+    if not USE_REPORTED_WINDOWS:
+        return True
+        
+    # If the toggle is on, check against the specific windows
     for start, end in REPORTED_WINDOWS:
         if start <= check_time <= end:
             return True
@@ -56,14 +67,21 @@ def extract_cap_data(filepath):
         matches = re.findall(r'<circle>([\d\.\-,\s]+)</circle>', xml_content)
         fires = [Point(float(m.strip().split()[0].split(',')[1]), 
                        float(m.strip().split()[0].split(',')[0])) for m in matches]
-        return ist_ts, fires
+        return utc_ts, ist_ts, fires
     except Exception as e:
         print(f"Error reading {os.path.basename(filepath)}: {e}")
         return None, []
 
+# def add_satellite_annotations(ax):
+#     """Adds vertical lines indicating major LEO satellite overpass times."""
+#     for idx, label in [(21, 'MODIS (Terra)\n10:30'), (27, 'MODIS (Aqua), VIIRS\n13:30')]:
+#         ax.axvline(x=idx, color='black', linestyle='--', alpha=0.6, linewidth=1.2)
+#         ax.text(idx - 0.4, ax.get_ylim()[1]*0.7, label, rotation=90, 
+#                 fontweight='bold', fontsize=11, ha='right', va='center')
+
 def add_satellite_annotations(ax):
-    """Adds vertical lines indicating major LEO satellite overpass times."""
-    for idx, label in [(21, 'MODIS (Terra)\n10:30'), (27, 'MODIS (Aqua), VIIRS\n13:30')]:
+    # Added (3, 'VIIRS\n01:30') for the new satellite line
+    for idx, label in [(3, 'VIIRS\n01:30'), (21, 'MODIS (Terra)\n10:30'), (27, 'MODIS (Aqua), VIIRS\n13:30')]:
         ax.axvline(x=idx, color='black', linestyle='--', alpha=0.6, linewidth=1.2)
         ax.text(idx - 0.4, ax.get_ylim()[1]*0.7, label, rotation=90, 
                 fontweight='bold', fontsize=11, ha='right', va='center')
@@ -142,11 +160,17 @@ def analyze_fires():
     print(f"Processing {len(files)} files...")
 
     for f in files:
-        ist_ts, fire_pts = extract_cap_data(f)
+        utc_ts, ist_ts, fire_pts = extract_cap_data(f)
+        
         if ist_ts is None: continue
         
-        rec = {'IST_Timestamp': ist_ts, 'Date': ist_ts.date(), 'Time': ist_ts.time()}
+        # The UTC date naturally groups your 05:30 IST to 05:29 IST cycle!
+        logical_date = utc_ts.date() 
         
+        if not (START_DATE <= logical_date <= END_DATE):
+            continue 
+            
+        rec = {'IST_Timestamp': ist_ts, 'Date': logical_date, 'Time': ist_ts.time()}
         if fire_pts:
             fgdf = gpd.GeoDataFrame(geometry=fire_pts, crs="EPSG:4326")
             joined = gpd.sjoin(fgdf, dist_gdf, how="inner", predicate="within")
@@ -160,7 +184,7 @@ def analyze_fires():
             for _, row in joined.iterrows():
                 all_fire_geometries.append({'geometry': row.geometry, 'State': row[STATE_COL]})
                 district_logs.append({
-                    'Date': ist_ts.date(),
+                    'Date': logical_date,  # <-- Change ist_ts.date() to logical_date
                     'Time': ist_ts.strftime('%H:%M'),
                     'State': row[STATE_COL],
                     'District': row[DIST_COL],
@@ -172,7 +196,7 @@ def analyze_fires():
         all_records.append(rec)
 
     if not all_records: 
-        print("No fire data found.")
+        print(f"No fire data found between {START_DATE} and {END_DATE}.")
         return
 
     df = pd.DataFrame(all_records)
@@ -234,19 +258,31 @@ def analyze_fires():
     # --- SPATIAL MAP ---
     if all_fire_geometries:
         fig, ax = plt.subplots(figsize=(12, 12))
-        # Filter shapefile to focus on target states for better map view
+        
+        # Filter shapefile to focus on target states
         focus_states = dist_gdf[dist_gdf[STATE_COL].isin(STATE_MAPPING.keys())]
-        focus_states.plot(ax=ax, color='white', edgecolor='black', linewidth=0.8)
+        
+        # 1. Plot District Boundaries (Lighter, thinner outline)
+        focus_states.plot(ax=ax, color='white', edgecolor='#a0a0a0', linewidth=0.5, zorder=1)
+        
+        # 2. Dissolve into State Boundaries and Plot (Darker, thicker outline)
+        state_boundaries = focus_states.dissolve(by=STATE_COL)
+        state_boundaries.boundary.plot(ax=ax, edgecolor='black', linewidth=1.5, zorder=2)
         
         fires_gdf = gpd.GeoDataFrame(all_fire_geometries, crs="EPSG:4326")
         for code, color in STATE_COLORS.items():
             state_data = fires_gdf[fires_gdf['State'] == code]
             if not state_data.empty:
-                state_data.plot(ax=ax, color=color, markersize=10, label=f"{code} ({len(state_data)})", alpha=0.5)
+                # Plot fire points on top (zorder=3)
+                state_data.plot(ax=ax, color=color, markersize=10, label=f"{code} ({len(state_data)})", alpha=0.6, zorder=3)
         
         plt.legend()
-        plt.title("Spatial Fire Distribution (IST Snapshot)")
-        plt.savefig(os.path.join(DATA_DIR_OUTPUT, 'Combined_Spatial_Map.png'), bbox_inches='tight')
+        plt.title(f"Spatial Fire Distribution (IST Snapshot)\n{START_DATE} to {END_DATE}")
+        
+        # Remove axes for a cleaner map look
+        ax.set_axis_off() 
+        
+        plt.savefig(os.path.join(DATA_DIR_OUTPUT, 'Combined_Spatial_Map.png'), bbox_inches='tight', dpi=300)
 
     print(f"Success! Analysis complete. Files saved in: {DATA_DIR_OUTPUT}")
 
