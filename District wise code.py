@@ -10,8 +10,8 @@ from datetime import datetime, timedelta, time, date
 from matplotlib.ticker import FuncFormatter, PercentFormatter
 
 # --- CONFIGURATION ---
-DATA_DIR = r'C:\Users\iForest.Global\OneDrive - INTERNATIONAL FORUM FOR ENVIRONMENT SCIENCE & TECHNOLOGY (iFOREST)\Desktop\sevari\15Feb_16May_2019-2026\2026'
-DATA_DIR_OUTPUT = r'C:\Users\iForest.Global\OneDrive - INTERNATIONAL FORUM FOR ENVIRONMENT SCIENCE & TECHNOLOGY (iFOREST)\Desktop\sevari\15Feb_16May_2019-2026\2026\output_2'
+DATA_DIR = r'C:\Desktop\sevari\2019-2026\2026'
+DATA_DIR_OUTPUT = r'C:\Desktop\sevari\2019-2026\2026\output_2'
 FILE_PATTERN = '*.NAT'
 
 # --- DATE FILTER CONFIGURATION ---
@@ -20,7 +20,7 @@ START_DATE = date(2026, 3, 1)
 END_DATE = date(2026, 6, 30)
 
 # District Shapefile (Ensure this contains both 'District' and 'State' columns)       
-SHAPEFILE_PATH = r'C:\Users\iForest.Global\OneDrive - INTERNATIONAL FORUM FOR ENVIRONMENT SCIENCE & TECHNOLOGY (iFOREST)\Desktop\Shapefile\District Boundary\District_NWIC.shp'
+SHAPEFILE_PATH = r'C:\Desktop\Shapefile\District Boundary\District_NWIC.shp'
 DIST_COL = 'District'
 STATE_COL = 'State'
 
